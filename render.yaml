@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: auto-login-telegram
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python auto_login_telegram.py
