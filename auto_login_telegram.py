@@ -8,9 +8,10 @@
 
 import re
 import time
-import sys
 import traceback
 from datetime import datetime
+import requests
+from playwright.sync_api import sync_playwright
 
 # ====== إعدادات المستخدم ======
 LOGIN_URL = "http://51.89.99.105/NumberPanel/login"
@@ -23,20 +24,6 @@ CHAT_ID = "-1003098999710"
 
 REFRESH_INTERVAL = 16  # ثواني
 
-# ====== المكتبات ======
-try:
-    from selenium import webdriver
-    from selenium.webdriver.common.by import By
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.chrome.options import Options
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-    from webdriver_manager.chrome import ChromeDriverManager
-except Exception:
-    print("❌ لازم تثبت selenium و webdriver-manager")
-    sys.exit(1)
-
-import requests
 
 # ====== دوال ======
 def send_telegram_message(token: str, chat_id: str, text: str) -> bool:
@@ -61,11 +48,16 @@ def parse_math_question(text: str):
         return None
     try:
         a, op, b = int(m.group(1)), m.group(2), int(m.group(3))
-        if op in ("x", "×"): op = "*"
-        if op == "+": return str(a + b)
-        if op == "-": return str(a - b)
-        if op == "*": return str(a * b)
-        if op == "/" and b != 0: return str(a // b) if a % b == 0 else str(a / b)
+        if op in ("x", "×"):
+            op = "*"
+        if op == "+":
+            return str(a + b)
+        if op == "-":
+            return str(a - b)
+        if op == "*":
+            return str(a * b)
+        if op == "/" and b != 0:
+            return str(a // b) if a % b == 0 else str(a / b)
     except:
         return None
     return None
@@ -73,106 +65,89 @@ def parse_math_question(text: str):
 
 # ====== تشغيل ======
 def main():
-    chrome_options = Options()
-    # ✅ الوضع الجديد للـ headless (مناسب لـ Render)
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
-    # تثبيت وتشغيل المتصفح تلقائياً
-    driver_path = ChromeDriverManager().install()
-    driver = webdriver.Chrome(service=Service(driver_path), options=chrome_options)
-    wait = WebDriverWait(driver, 12)
-
     try:
-        # --- تسجيل الدخول ---
-        print("🔗 فتح صفحة الدخول...")
-        driver.get(LOGIN_URL)
+        print("🚀 بدء التشغيل...")
 
-        username_elem = wait.until(EC.presence_of_element_located((By.NAME, "username")))
-        password_elem = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@type='password']")))
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
 
-        username_elem.send_keys(USERNAME)
-        password_elem.send_keys(PASSWORD)
+            # --- تسجيل الدخول ---
+            print("🔗 فتح صفحة الدخول...")
+            page.goto(LOGIN_URL, timeout=60000)
 
-        # حل السؤال الحسابي (لو موجود)
-        body_text = driver.find_element(By.TAG_NAME, "body").text
-        ans = parse_math_question(body_text)
-        if ans:
-            print("🧮 تم إيجاد سؤال حسابي → النتيجة:", ans)
-            for xp in [
-                "//input[@name='answer']",
-                "//input[contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'answer')]",
-                "//input[contains(translate(@id,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'answer')]",
-                "//input[contains(translate(@name,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'result')]",
-                "//input[@type='text']"
-            ]:
-                try:
-                    answer_elem = driver.find_element(By.XPATH, xp)
-                    if answer_elem.is_displayed():
-                        answer_elem.clear()
-                        answer_elem.send_keys(ans)
-                        print("✅ أدخلت الإجابة الحسابية.")
-                        break
-                except:
-                    continue
+            page.fill("input[name='username']", USERNAME)
+            page.fill("input[type='password']", PASSWORD)
 
-        # زر login
-        try:
-            btn = driver.find_element(By.XPATH, "//button[contains(translate(.,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'login')]")
-            btn.click()
-            print("✅ ضغطت زر Login.")
-        except:
-            print("❗ زر login مش موجود")
-            return
+            # حل السؤال الحسابي
+            body_text = page.content()
+            ans = parse_math_question(body_text)
+            if ans:
+                print(f"🧮 تم إيجاد سؤال حسابي → النتيجة: {ans}")
+                for selector in [
+                    "input[name='answer']",
+                    "input[placeholder*='answer' i]",
+                    "input[id*='answer' i]",
+                    "input[name*='result' i]",
+                    "input[type='text']",
+                ]:
+                    try:
+                        if page.locator(selector).count() > 0:
+                            page.fill(selector, ans)
+                            print("✅ أدخلت الإجابة الحسابية.")
+                            break
+                    except:
+                        continue
 
-        # --- الذهاب للصفحة المستهدفة ---
-        time.sleep(4)
-        driver.get(TARGET_URL)
-        time.sleep(2)
-        print("📍 العنوان الحالي:", driver.current_url)
+            # الضغط على زر login
+            try:
+                page.locator("button:has-text('Login'), button:has-text('login')").click(timeout=5000)
+                print("✅ ضغطت زر Login.")
+            except:
+                print("❗ زر login مش موجود")
+                return
 
-        # --- مراقبة الصفحة ---
-        print("🔔 وضع المراقبة شغال...")
-        last_page = ""
+            time.sleep(4)
+            page.goto(TARGET_URL, timeout=60000)
+            print("📍 العنوان الحالي:", page.url)
 
-        while True:
-            time.sleep(REFRESH_INTERVAL)
-            driver.refresh()
-            time.sleep(1)
+            # --- مراقبة الصفحة ---
+            print("🔔 وضع المراقبة شغال...")
+            last_page = ""
 
-            page_text = driver.find_element(By.TAG_NAME, "body").text
+            while True:
+                time.sleep(REFRESH_INTERVAL)
+                page.reload()
+                time.sleep(1)
 
-            if page_text != last_page:
-                new_lines = [l for l in page_text.splitlines() if l not in last_page.splitlines()]
-                telegram_lines = [l for l in new_lines if re.search(r"telegram|تلجرام", l, re.IGNORECASE)]
-                if telegram_lines:
-                    for line in telegram_lines:
-                        # استخراج الرقم
-                        phone_match = re.search(r"\b\d{10,15}\b", line)
-                        phone = phone_match.group(0) if phone_match else "غير معروف"
+                page_text = page.content()
 
-                        # استخراج الكود
-                        code_match = re.search(r"Telegram code\s+(\d+)", line, re.IGNORECASE)
-                        code = code_match.group(1) if code_match else "غير معروف"
+                if page_text != last_page:
+                    new_lines = [l for l in page_text.splitlines() if l not in last_page.splitlines()]
+                    telegram_lines = [l for l in new_lines if re.search(r"telegram|تلجرام", l, re.IGNORECASE)]
+                    if telegram_lines:
+                        for line in telegram_lines:
+                            phone_match = re.search(r"\b\d{10,15}\b", line)
+                            phone = phone_match.group(0) if phone_match else "غير معروف"
 
-                        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        msg = f"📩 رسالة جديدة ({ts})\n📲 رقم: {phone}\n🔑 كود: {code}"
-                        send_telegram_message(BOT_TOKEN, CHAT_ID, msg)
-                        print("✅ أرسلت الرقم والكود لتليجرام.")
+                            code_match = re.search(r"Telegram code\s+(\d+)", line, re.IGNORECASE)
+                            code = code_match.group(1) if code_match else "غير معروف"
+
+                            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            msg = f"📩 رسالة جديدة ({ts})\n📲 رقم: {phone}\n🔑 كود: {code}"
+                            send_telegram_message(BOT_TOKEN, CHAT_ID, msg)
+                            print("✅ أرسلت الرقم والكود لتليجرام.")
+                    else:
+                        print("ℹ️ فيه تحديث بس مفيهوش Telegram.")
+                    last_page = page_text
                 else:
-                    print("ℹ️ فيه تحديث بس مفيهوش Telegram.")
-                last_page = page_text
-            else:
-                print("ℹ️ لا جديد.")
+                    print("ℹ️ لا جديد.")
 
     except KeyboardInterrupt:
         print("✋ تم إيقاف البرنامج يدويًا.")
     except Exception as e:
         print("⚠️ خطأ:", e)
         traceback.print_exc()
-    finally:
-        driver.quit()
 
 
 if __name__ == "__main__":
