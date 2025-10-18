@@ -1,2 +1,6 @@
 playwright
 requests
+playwright==1.47.0
+requests
+aiohttp
+python-telegram-bot==20.7
