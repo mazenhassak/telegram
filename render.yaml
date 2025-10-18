@@ -1,8 +1,9 @@
 services:
   - type: web
-    name: telegram-auto-login
+    name: telegram-bot
     env: python
-    plan: free
-    buildCommand: |
-      pip install -r requirements.txt
-    startCommand: python auto_login_telegram.py
+    buildCommand: ""
+    startCommand: python main.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.4
