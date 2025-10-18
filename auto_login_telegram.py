@@ -1,9 +1,6 @@
 # auto_login_telegram.py
 """
-يفتح الموقع، يسجل الدخول، يروح لصفحة SMSCDRStats،
-ويعمل refresh كل فترة.
-لو لقى أي رسائل جديدة فيها كلمة Telegram أو تلجرام → يفلترها ويستخرج الرقم والكود
-ويبعتهم على التليجرام.
+نسخة محدثة تعمل على Render بدون الحاجة لتثبيت chromium يدويًا.
 """
 
 import re
@@ -26,34 +23,28 @@ REFRESH_INTERVAL = 16  # ثواني
 
 # ====== المكتبات ======
 try:
-    from selenium import webdriver
+    import undetected_chromedriver as uc
     from selenium.webdriver.common.by import By
-    from selenium.webdriver.chrome.service import Service
-    from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
-    import chromedriver_autoinstaller
 except Exception:
-    print("❌ لازم تثبت selenium و chromedriver-autoinstaller")
+    print("❌ لازم تثبت selenium و undetected-chromedriver")
     sys.exit(1)
 
-# ====== دوال ======
+
+# ====== الدوال ======
 def send_telegram_message(token: str, chat_id: str, text: str) -> bool:
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
         res = requests.post(url, data={"chat_id": chat_id, "text": text})
-        if res.status_code == 200:
-            return True
-        else:
-            print("⚠️ خطأ في إرسال رسالة:", res.status_code, res.text)
-            return False
+        return res.status_code == 200
     except Exception as e:
         print("⚠️ خطأ إرسال لتليجرام:", e)
         return False
 
 
 def parse_math_question(text: str):
-    """يحاول يحل سؤال حسابي بسيط موجود في نص الصفحة"""
+    """حل سؤال حسابي بسيط"""
     m = re.search(r'(-?\d+)\s*([+\-*/x×])\s*(-?\d+)', text)
     if not m:
         return None
@@ -61,40 +52,26 @@ def parse_math_question(text: str):
         a, op, b = int(m.group(1)), m.group(2), int(m.group(3))
         if op in ("x", "×"):
             op = "*"
-        if op == "+":
-            return str(a + b)
-        if op == "-":
-            return str(a - b)
-        if op == "*":
-            return str(a * b)
-        if op == "/" and b != 0:
-            return str(a // b) if a % b == 0 else str(a / b)
+        return str(eval(f"{a}{op}{b}"))
     except:
         return None
-    return None
 
 
 def setup_driver():
-    """إعداد المتصفح بشكل آمن ومتوافق مع Render"""
-    chrome_options = Options()
+    """إعداد المتصفح تلقائيًا حتى لو Chromium مش مثبت"""
+    options = uc.ChromeOptions()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
 
-    # تحديد مكان المتصفح على Render
-    chrome_options.binary_location = "/usr/bin/chromium"
-
-    # إعدادات التشغيل بدون واجهة
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
-    # تثبيت chromedriver تلقائيًا
-    chromedriver_autoinstaller.install()
-
-    return webdriver.Chrome(service=Service(), options=chrome_options)
+    print("🚀 تشغيل متصفح Chromium مدمج...")
+    driver = uc.Chrome(options=options)
+    return driver
 
 
 # ====== التشغيل ======
 def main():
-    while True:  # إعادة التشغيل التلقائي في حال حدوث أي خطأ
+    while True:
         try:
             driver = setup_driver()
             wait = WebDriverWait(driver, 12)
@@ -105,7 +82,6 @@ def main():
 
             username_elem = wait.until(EC.presence_of_element_located((By.NAME, "username")))
             password_elem = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@type='password']")))
-
             username_elem.send_keys(USERNAME)
             password_elem.send_keys(PASSWORD)
 
@@ -113,24 +89,13 @@ def main():
             body_text = driver.find_element(By.TAG_NAME, "body").text
             ans = parse_math_question(body_text)
             if ans:
-                print("🧮 تم إيجاد سؤال حسابي → النتيجة:", ans)
-                answer_elem = None
-                for xp in [
-                    "//input[@name='answer']",
-                    "//input[contains(translate(@placeholder,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'answer')]",
-                    "//input[contains(translate(@id,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'answer')]",
-                    "//input[contains(translate(@name,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'result')]",
-                    "//input[@type='text']"
-                ]:
-                    try:
-                        answer_elem = driver.find_element(By.XPATH, xp)
-                        if answer_elem.is_displayed():
-                            answer_elem.clear()
-                            answer_elem.send_keys(ans)
-                            print("✅ أدخلت الإجابة الحسابية.")
-                            break
-                    except:
-                        continue
+                print("🧮 النتيجة:", ans)
+                try:
+                    answer_elem = driver.find_element(By.XPATH, "//input[@type='text']")
+                    answer_elem.clear()
+                    answer_elem.send_keys(ans)
+                except:
+                    pass
 
             # زر login
             try:
@@ -155,27 +120,22 @@ def main():
                 time.sleep(1)
 
                 page_text = driver.find_element(By.TAG_NAME, "body").text
-
                 if page_text != last_page:
-                    # استخرج السطور الجديدة فقط
                     new_lines = [l for l in page_text.splitlines() if l not in last_page.splitlines()]
                     telegram_lines = [l for l in new_lines if re.search(r"telegram|تلجرام", l, re.IGNORECASE)]
+
                     if telegram_lines:
                         for line in telegram_lines:
-                            # 🔍 استخراج الرقم
-                            phone_match = re.search(r"\b\d{10,15}\b", line)
-                            phone = phone_match.group(0) if phone_match else "غير معروف"
-
-                            # 🔍 استخراج الكود
-                            code_match = re.search(r"Telegram code\s+(\d+)", line, re.IGNORECASE)
-                            code = code_match.group(1) if code_match else "غير معروف"
-
+                            phone = re.search(r"\b\d{10,15}\b", line)
+                            phone = phone.group(0) if phone else "غير معروف"
+                            code = re.search(r"Telegram code\s+(\d+)", line, re.IGNORECASE)
+                            code = code.group(1) if code else "غير معروف"
                             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            msg = f"📩 رسالة جديدة ({ts})\n📲 رقم: {phone}\n🔑 كود: {code}"
+                            msg = f"📩 ({ts})\n📲 رقم: {phone}\n🔑 كود: {code}"
                             send_telegram_message(BOT_TOKEN, CHAT_ID, msg)
                             print("✅ أرسلت الرقم والكود لتليجرام.")
                     else:
-                        print("ℹ️ فيه تحديث بس مفيهوش Telegram.")
+                        print("ℹ️ مفيش جديد متعلق بـ Telegram.")
                     last_page = page_text
                 else:
                     print("ℹ️ لا جديد.")
@@ -183,7 +143,7 @@ def main():
         except Exception as e:
             print("⚠️ خطأ:", e)
             traceback.print_exc()
-            print("🔁 إعادة تشغيل خلال 10 ثواني...")
+            print("🔁 إعادة تشغيل بعد 10 ثواني...")
             time.sleep(10)
         finally:
             try:
