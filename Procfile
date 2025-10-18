@@ -1,1 +1,1 @@
-worker: python mazen.py
+worker: python bot.py
