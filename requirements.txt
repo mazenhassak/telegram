@@ -1,5 +1,3 @@
 selenium
 webdriver-manager
-chromedriver-autoinstaller
-undetected-chromedriver
 requests
