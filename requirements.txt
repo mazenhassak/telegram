@@ -1,5 +1,5 @@
 selenium
 webdriver-manager
-requests
-selenium
 chromedriver-autoinstaller
+undetected-chromedriver
+requests
