@@ -1,7 +1,10 @@
 services:
   - type: web
-    name: auto-login-telegram
+    name: telegram-auto-login
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    buildCommand: |
+      apt-get update
+      apt-get install -y chromium chromium-driver
+      pip install -r requirements.txt
     startCommand: python auto_login_telegram.py
