@@ -71,7 +71,12 @@ def parse_math_question(text: str):
 # ====== تشغيل ======
 def main():
     chrome_options = Options()
-    # chrome_options.add_argument("--headless")  # شغلها لو مش عايز المتصفح يبان
+
+    # 🆕 تم إضافة هذا السطر ليحدد مكان متصفح Chromium على Render أو Linux
+    chrome_options.binary_location = "/usr/bin/chromium"
+
+    # إعدادات التشغيل
+    chrome_options.add_argument("--headless")  # تشغيل بدون واجهة
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
